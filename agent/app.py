@@ -7,6 +7,12 @@ from pathlib import Path
 from game_module import GameModuleBase
 from subprocess import Popen
 from streaming import start_streaming
+from remote_input import handle_packet
+from process import wait_for_window
+
+import win32gui
+import win32con
+import win32com.client
 
 def load_game_module(game_dir: Path) -> GameModuleBase:
     plugin_file = game_dir / "game.py"
@@ -63,6 +69,18 @@ def create_ws_handle(config: Config, agent_state: AgentState):
 
                 if json_msg['type'] == "start":
                     agent_state.game_proccess = start_game(config, user, game)
+
+                    hwnd = wait_for_window(agent_state.game_proccess.pid)
+
+                    if hwnd:
+                        shell = win32com.client.Dispatch("WScript.Shell")
+                        shell.SendKeys('%')
+
+                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)      # Restore if minimized
+                        win32gui.SetForegroundWindow(hwnd)                  # Bring to foreground
+                    else:
+                        print("Window not found")
+
                     agent_state.streaming_process = start_streaming()
                     await ws.send(json.dumps({
                         "result": "ok",
@@ -74,7 +92,10 @@ def create_ws_handle(config: Config, agent_state: AgentState):
 
         try:
             async for msg in ws:
-                print(f"New msg: {msg}")
+                if isinstance(msg, bytes):
+                    handle_packet(msg)
+                else:
+                    print(f"New msg: {msg}")
         except Exception as e:
                 print(f"Error: {msg}. Closing session")
         finally:
@@ -83,7 +104,8 @@ def create_ws_handle(config: Config, agent_state: AgentState):
                 agent_state.streaming_process.terminate()
                 agent_state.game_proccess = None
                 agent_state.streaming_process = None
-                    
+            cleanup_packet = bytes(32)
+            handle_packet(cleanup_packet)
 
     return ws_handle
 
