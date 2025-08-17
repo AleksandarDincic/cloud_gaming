@@ -1,6 +1,9 @@
 import time
 import win32gui
 import win32process
+import win32com.client
+import win32con
+
 
 def get_hwnd_from_pid(pid):
     def callback(hwnd, hwnds):
@@ -21,3 +24,10 @@ def wait_for_window(pid, timeout=10.0, check_interval=0.1):
             return hwnd
         time.sleep(check_interval)
     return None
+
+def bring_window_to_foreground(hwnd):
+    shell = win32com.client.Dispatch("WScript.Shell")
+    shell.SendKeys('%')
+
+    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    win32gui.SetForegroundWindow(hwnd)

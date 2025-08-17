@@ -8,11 +8,7 @@ from game_module import GameModuleBase
 from subprocess import Popen
 from streaming import start_streaming
 from remote_input import handle_packet
-from process import wait_for_window
-
-import win32gui
-import win32con
-import win32com.client
+from process import wait_for_window, bring_window_to_foreground
 
 def load_game_module(game_dir: Path) -> GameModuleBase:
     plugin_file = game_dir / "game.py"
@@ -35,11 +31,12 @@ class AgentState:
 
 
 class Config:
-    def __init__(self, games_repo_path: str, working_folder_path: str, host_ip: str, host_port: int):
+    def __init__(self, games_repo_path: str, working_folder_path: str, host_ip: str, host_port: int, audio_device: str):
         self.games_repo_path = games_repo_path
         self.working_folder_path = working_folder_path
         self.host_ip = host_ip
         self.host_port = host_port
+        self.audio_device = audio_device
 
 def start_game(config: Config, user: str, game: str) -> Popen:
     dl = file_dl.LocalFSGameFileManager(config.working_folder_path, config.games_repo_path)
@@ -48,64 +45,67 @@ def start_game(config: Config, user: str, game: str) -> Popen:
     return game_module.start_game(game_path) # TODO: does this really need game_path as param? why not a field?
 
 def create_ws_handle(config: Config, agent_state: AgentState):
-    async def ws_handle(ws):
-        async with agent_state.lock:
-            if agent_state.game_proccess is not None:
-                print(f"A new connection was made but a game is already running. Closing the new connection.")
-                try:
-                    await ws.send(json.dumps({
-                        "result": "err",
-                        "msg": "A session is already running."
-                    }))
-                except Exception as e:
-                    print(f"Error while sending response to client: {e}")
-                return
 
-            try:
+    async def cleanup():
+        async with agent_state.lock:
+            if agent_state.game_proccess:
+                agent_state.game_proccess.terminate()
+                agent_state.game_proccess = None
+            if agent_state.streaming_process:
+                agent_state.streaming_process.terminate()
+                agent_state.streaming_process = None
+            cleanup_packet = bytes(32)
+            handle_packet(cleanup_packet)
+            print("Game and streaming processes released. Input cleaned up.")
+
+    async def ws_handle(ws):
+        try:
+            async with agent_state.lock:
+                if agent_state.game_proccess is not None:
+                    print(f"A new connection was made but a game is already running. Closing the new connection.")
+                    try:
+                        await ws.send(json.dumps({
+                            "result": "err",
+                            "msg": "A session is already running."
+                        }))
+                    except Exception as e:
+                        print(f"Error while sending response to client: {e}")
+                    return
+
                 msg = await ws.recv()
                 json_msg = json.loads(msg)
                 user = json_msg['user']
                 game = json_msg['game']
-
+                
+                
                 if json_msg['type'] == "start":
                     agent_state.game_proccess = start_game(config, user, game)
 
                     hwnd = wait_for_window(agent_state.game_proccess.pid)
 
-                    if hwnd:
-                        shell = win32com.client.Dispatch("WScript.Shell")
-                        shell.SendKeys('%')
+                    if not hwnd:
+                        await ws.send(json.dumps({
+                            "result": "err",
+                            "msg": "Unable to start the game."
+                        }))
+                        raise Exception("Window not found")
 
-                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)      # Restore if minimized
-                        win32gui.SetForegroundWindow(hwnd)                  # Bring to foreground
-                    else:
-                        print("Window not found")
-
-                    agent_state.streaming_process = start_streaming()
+                    bring_window_to_foreground(hwnd)
+                    print(f"Streaming window {hwnd} and audio device {audio_device}")
+                    agent_state.streaming_process = start_streaming(hwnd, audio_device)
                     await ws.send(json.dumps({
                         "result": "ok",
                     }))
-            except Exception as e:
-                print(f"Error: {e}")
-                # TODO: what if process was started but ws.send failed? fix the logic
-                return
 
-        try:
             async for msg in ws:
                 if isinstance(msg, bytes):
                     handle_packet(msg)
                 else:
                     print(f"New msg: {msg}")
         except Exception as e:
-                print(f"Error: {msg}. Closing session")
+                print(f"Error: {e}. Closing session")
         finally:
-            async with agent_state.lock:
-                agent_state.game_proccess.terminate()
-                agent_state.streaming_process.terminate()
-                agent_state.game_proccess = None
-                agent_state.streaming_process = None
-            cleanup_packet = bytes(32)
-            handle_packet(cleanup_packet)
+            await cleanup()
 
     return ws_handle
 
@@ -122,7 +122,8 @@ if __name__ == "__main__":
     working_folder_path = 'C:\\faks\\master\\cloud_gaming\\agent\\data'
     host_ip = "0.0.0.0"
     host_port = 8765
+    audio_device = "{0.0.1.00000000}.{c044b75b-0f4c-483f-ac7c-3e16636b239a}"
 
-    config = Config(games_repo_path, working_folder_path, host_ip, host_port)
+    config = Config(games_repo_path, working_folder_path, host_ip, host_port, audio_device)
 
     asyncio.run(main(config))

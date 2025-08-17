@@ -1,6 +1,6 @@
 from subprocess import Popen
 
-def start_streaming() -> Popen:
+def start_streaming(window_handle: int, audio_device: str) -> Popen:
     # cmd = [
     #     "gst-launch-1.0.exe",
     #     "d3d11screencapturesrc", "show-cursor=true",
@@ -21,7 +21,7 @@ def start_streaming() -> Popen:
 
     cmd = [
         "gst-launch-1.0.exe",
-        "d3d11screencapturesrc", "show-cursor=true",
+        "d3d11screencapturesrc", "show-cursor=true", f"window-handle={window_handle}",
         "!", "videoconvert",
         "!", "video/x-raw,format=NV12",
         "!", "nvh264enc", "tune=ultra-low-latency", "preset=p1", "rc-mode=cbr", "bitrate=2000", "gop-size=15", "zerolatency=true",
@@ -29,7 +29,7 @@ def start_streaming() -> Popen:
         "!", "queue", "max-size-buffers=1", "max-size-time=0", "max-size-bytes=0", "leaky=downstream",
         "!", "webrtcsink", "name=sink",
         "run-signalling-server=true", "run-web-server=true", "web-server-host-addr=http://0.0.0.0:8080/",
-        "wasapisrc", "loopback=true", "low-latency=true",
+        "wasapisrc", "loopback=true", "low-latency=true", #f"device={audio_device}"
         "!", "audioconvert",
         "!", "audioresample",
         "!", "audio/x-raw,rate=48000,channels=2,format=S16LE",
