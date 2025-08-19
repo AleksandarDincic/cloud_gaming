@@ -27,6 +27,18 @@ function stateChanged() {
   return false;
 }
 
+function showError(message) {
+    if (message === "" || message === null) {
+        document.getElementById("error").style.display = "none";
+        document.getElementById("error").textContent = "";
+        document.getElementById("stream_player").style.display = "block";
+    } else {
+        document.getElementById("error").textContent = message;
+        document.getElementById("error").style.display = "block";
+        document.getElementById("stream_player").style.display = "none";
+    }
+}
+
 
 function init() {
     let params = window.location.pathname.split('/');
@@ -36,6 +48,7 @@ function init() {
     console.log(`Cloud gaming input: ${user_name}, ${game_name}`);
 
     let ws_url = `ws://${window.location.hostname}:8765`;
+    showError(`Connecting...`);
     console.log(`Connecting to ws: ${ws_url}`);
 
     ws = new WebSocket(ws_url);
@@ -50,7 +63,6 @@ function init() {
 
     ws.addEventListener("message", (event) => {
         console.log(`Received from server: ${event.data}`);
-        document.getElementById("error").textContent = event.data;
     });
 
     videoElement = document.getElementById("stream_player")
@@ -87,15 +99,16 @@ function init() {
                 videoElement.pause();
                 videoElement.srcObject = null;
                 session = null;
-                console.error("Session closed");
+                showError("Session closed");
             });
 
             session.addEventListener("streamsChanged", () => {
                 const streams = session.streams;
                 if (streams.length > 0) {
                     videoElement.srcObject = streams[0];
+                    showError("");
                     videoElement.play().catch(err => {
-                        console.error("Autoplay error:", err.name, err.message);
+                        showError("Autoplay error: " + err.message);
                     });
                 }
             });
@@ -104,7 +117,7 @@ function init() {
         },
 
         producerRemoved: function (producer) {
-            console.error("Producer removed, should clear everything")
+            showError("Producer removed, should clear everything");
         }
     };
 
