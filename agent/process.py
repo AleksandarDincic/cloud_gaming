@@ -17,6 +17,7 @@ def get_hwnd_from_pid(pid):
     return hwnds[0] if hwnds else None
 
 def wait_for_window(pid, timeout=10.0, check_interval=0.1):
+    print(f"Waiting for window with PID {pid}")
     start = time.time()
     while time.time() - start < timeout:
         hwnd = get_hwnd_from_pid(pid)

@@ -54,7 +54,7 @@ def create_ws_handle(config: Config, agent_state: AgentState):
             if agent_state.streaming_process:
                 agent_state.streaming_process.terminate()
                 agent_state.streaming_process = None
-            cleanup_packet = bytes(32)
+            cleanup_packet = bytes(56)
             handle_packet(cleanup_packet)
             print("Game and streaming processes released. Input cleaned up.")
 

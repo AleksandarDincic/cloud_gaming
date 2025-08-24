@@ -7,8 +7,9 @@ let mouse_dx = 0, mouse_dy = 0;
 let mouse_wheel = 0;
 
 let previous_input_keys = new Uint8Array(32);
+let previous_mouse_buttons = 0;
 
-let input_packet = new Uint8Array(32);
+let input_packet = new Uint8Array(56); // 32 bytes for keys + 16 bytes for mouse data + 8 bytes for timestamp
 
 const SEND_ON_STATE_CHANGE = true;
 
@@ -24,7 +25,10 @@ function stateChanged() {
   for (let i = 0; i < 32; i++) {
     if (keys_bit_mask[i] !== previous_input_keys[i]) return true;
   }
-  return false;
+  return (mouse_buttons !== previous_mouse_buttons || 
+          mouse_dx !== 0 || 
+          mouse_dy !== 0 || 
+          mouse_wheel !== 0);
 }
 
 function showError(message) {
@@ -132,9 +136,6 @@ function init() {
         videoElement.requestPointerLock();
     })
 
-    addEventListener("keydown", e => setKey(e.keyCode, true),  {passive:true});
-    addEventListener("keyup",   e => setKey(e.keyCode, false), {passive:true});
-
     setInterval(() => {
         if (document.pointerLockElement !== videoElement)  {
             console.log("Pointer lock not on video, not sending")
@@ -151,12 +152,67 @@ function init() {
             return;
         }
 
-        input_packet.set(keys_bit_mask);
+        // Packet contains:
+        // Keyboard [0-31]
+        // Mouse [32-47]
+            // Mouse buttons [32-35]
+            // Mouse movement [36-43]
+            // Mouse wheel [44-47]
+        // Timestamp [48-55]
+
+        input_packet.set(keys_bit_mask, 0);
+        
+        let view = new DataView(input_packet.buffer);
+        view.setUint32(32, mouse_buttons, true);
+        view.setInt32(36, mouse_dx, true);
+        view.setInt32(40, mouse_dy, true);
+        view.setInt32(44, mouse_wheel, true);
+
+        let timestamp = Date.now();
+        view.setBigUint64(48, BigInt(timestamp), true);
 
         ws.send(input_packet);
 
         previous_input_keys.set(keys_bit_mask);
+        previous_mouse_buttons = mouse_buttons;
+        
+        mouse_dx = 0;
+        mouse_dy = 0;
+        mouse_wheel = 0;
     }, 1 / 60);
+
+    addEventListener("keydown", e => setKey(e.keyCode, true),  {passive:true});
+    addEventListener("keyup",   e => setKey(e.keyCode, false), {passive:true});
+
+    addEventListener("mousemove", e => {
+        if (document.pointerLockElement === videoElement) {
+            console.log(`JS: Mouse move - movementX=${e.movementX}, movementY=${e.movementY}`);
+            mouse_dx += e.movementX;
+            mouse_dy += e.movementY;
+            console.log(`JS: Accumulated - dx=${mouse_dx}, dy=${mouse_dy}`);
+        }
+    }, {passive:true});
+
+    addEventListener("mousedown", e => {
+        if (document.pointerLockElement === videoElement) {
+            mouse_buttons |= (1 << e.button);
+            e.preventDefault();
+        }
+    });
+
+    addEventListener("mouseup", e => {
+        if (document.pointerLockElement === videoElement) {
+            mouse_buttons &= ~(1 << e.button);
+            e.preventDefault();
+        }
+    });
+
+    addEventListener("wheel", e => {
+        if (document.pointerLockElement === videoElement) {
+            mouse_wheel += Math.sign(e.deltaY);
+            e.preventDefault();
+        }
+    });
 }
 
 window.addEventListener("DOMContentLoaded", () => {
