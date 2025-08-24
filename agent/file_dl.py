@@ -27,7 +27,7 @@ class LocalFSGameFileManager(GameFileManager):
 
         zip_file_path = self.games_repo_path / f'{game}.zip'
         if not zip_file_path.is_file():
-            raise Exception("Game not in repo")
+            raise Exception(f"Game {game} not in repo")
 
         
         with zipfile.ZipFile(zip_file_path) as zip:

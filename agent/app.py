@@ -3,6 +3,7 @@ from websockets.asyncio.server import serve
 import file_dl
 import json
 import importlib.util
+import traceback
 from pathlib import Path
 from game_module import GameModuleBase
 from subprocess import Popen
@@ -103,7 +104,8 @@ def create_ws_handle(config: Config, agent_state: AgentState):
                 else:
                     print(f"New msg: {msg}")
         except Exception as e:
-                print(f"Error: {e}. Closing session")
+            traceback.print_exc()
+            print(f"Error: {e}. Closing session")
         finally:
             await cleanup()
 

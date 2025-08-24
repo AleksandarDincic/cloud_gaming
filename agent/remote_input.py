@@ -56,7 +56,7 @@ prev_buttons = 0
 def handle_packet(pkt: bytes):
     global prev_keys, prev_buttons
 
-    if len(pkt) != 56:  # 32 bytes keys + 16 bytes mouse + 8 bytes timestamp
+    if len(pkt) != 56:
         print(f"Invalid packet size: {len(pkt)}, expected 56")
         return
 
@@ -84,28 +84,26 @@ def handle_packet(pkt: bytes):
             mouse_left_down()
         else:
             mouse_left_up()
-    if changed & 2:  # Right button (bit 1)
+    if changed & 2:  # Middle button (bit 1)
         if mouse_buttons & 2:
-            mouse_right_down()
-        else:
-            mouse_right_up()
-    if changed & 4:  # Middle button (bit 2)
-        if mouse_buttons & 4:
             mouse_middle_down()
         else:
             mouse_middle_up()
+    if changed & 4:  # Right button (bit 2)
+        if mouse_buttons & 4:
+            mouse_right_down()
+        else:
+            mouse_right_up()
     prev_buttons = mouse_buttons
 
     # Handle mouse movement (relative)
     if mouse_dx != 0 or mouse_dy != 0:
-        print(f"Mouse moved: dx={mouse_dx}, dy={mouse_dy}")
         mouse_move(mouse_dx, mouse_dy)
 
     # Handle mouse wheel
     if mouse_wheel_input != 0:
         # Windows expects wheel delta in multiples of 120
-        wheel_delta = mouse_wheel_input * 120
-        print(f"Mouse wheel: {wheel_delta}")
+        wheel_delta =  -1 * mouse_wheel_input * 120
         mouse_wheel(wheel_delta)
 
     # Timestamp (48-55)

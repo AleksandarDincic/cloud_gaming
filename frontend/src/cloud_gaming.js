@@ -31,6 +31,54 @@ function stateChanged() {
           mouse_wheel !== 0);
 }
 
+function sendInputPacket(force) {
+    if (!force) {
+        if (document.pointerLockElement !== videoElement)  {
+            console.log("Pointer lock not on video, not sending")
+            return;
+        }
+
+        if (ws.readyState !== WebSocket.OPEN) {
+            console.log("Websocket not open, not sending")
+            return;
+        }
+
+        if (SEND_ON_STATE_CHANGE && !stateChanged()) {
+            console.log("State hasnt changed, not sending")
+            return;
+        }
+    }
+
+    // Packet contains:
+    // Keyboard [0-31]
+    // Mouse [32-47]
+        // Mouse buttons [32-35]
+        // Mouse movement [36-43]
+        // Mouse wheel [44-47]
+    // Timestamp [48-55]
+
+    input_packet.set(keys_bit_mask, 0);
+    
+    let view = new DataView(input_packet.buffer);
+    view.setUint32(32, mouse_buttons, true);
+    view.setInt32(36, mouse_dx, true);
+    view.setInt32(40, mouse_dy, true);
+    view.setInt32(44, mouse_wheel, true);
+
+    let timestamp = Date.now();
+    view.setBigUint64(48, BigInt(timestamp), true);
+
+    ws.send(input_packet);
+
+    previous_input_keys.set(keys_bit_mask);
+    previous_mouse_buttons = mouse_buttons;
+    
+    mouse_dx = 0;
+    mouse_dy = 0;
+    mouse_wheel = 0;
+}
+
+
 function showError(message) {
     if (message === "" || message === null) {
         document.getElementById("error").style.display = "none";
@@ -49,9 +97,11 @@ function init() {
     let user_name = params[1];
     let game_name = params[2];
 
+    let agent_ws_url = `ws://${window.location.hostname}`; // "ws://172.18.140.177";
+
     console.log(`Cloud gaming input: ${user_name}, ${game_name}`);
 
-    let ws_url = `ws://${window.location.hostname}:8765`;
+    let ws_url = `${agent_ws_url}:8765`;
     showError(`Connecting...`);
     console.log(`Connecting to ws: ${ws_url}`);
 
@@ -75,7 +125,7 @@ function init() {
 
     let webrtc_config = {
         meta: { name: `WebClient-${Date.now()}` },
-        signalingServerUrl: `ws://${window.location.hostname}:8443`,
+        signalingServerUrl: `${agent_ws_url}:8443`,
     };
 
     let webrtc_api = new GstWebRTCAPI(webrtc_config)
@@ -137,49 +187,8 @@ function init() {
     })
 
     setInterval(() => {
-        if (document.pointerLockElement !== videoElement)  {
-            console.log("Pointer lock not on video, not sending")
-            return;
-        }
-
-        if (ws.readyState !== WebSocket.OPEN) {
-            console.log("Websocket not open, not sending")
-            return;
-        }
-
-        if (SEND_ON_STATE_CHANGE && !stateChanged()) {
-            console.log("State hasnt changed, not sending")
-            return;
-        }
-
-        // Packet contains:
-        // Keyboard [0-31]
-        // Mouse [32-47]
-            // Mouse buttons [32-35]
-            // Mouse movement [36-43]
-            // Mouse wheel [44-47]
-        // Timestamp [48-55]
-
-        input_packet.set(keys_bit_mask, 0);
-        
-        let view = new DataView(input_packet.buffer);
-        view.setUint32(32, mouse_buttons, true);
-        view.setInt32(36, mouse_dx, true);
-        view.setInt32(40, mouse_dy, true);
-        view.setInt32(44, mouse_wheel, true);
-
-        let timestamp = Date.now();
-        view.setBigUint64(48, BigInt(timestamp), true);
-
-        ws.send(input_packet);
-
-        previous_input_keys.set(keys_bit_mask);
-        previous_mouse_buttons = mouse_buttons;
-        
-        mouse_dx = 0;
-        mouse_dy = 0;
-        mouse_wheel = 0;
-    }, 1 / 60);
+        sendInputPacket(false);
+    }, 1000 / 60);
 
     addEventListener("keydown", e => setKey(e.keyCode, true),  {passive:true});
     addEventListener("keyup",   e => setKey(e.keyCode, false), {passive:true});
@@ -211,6 +220,13 @@ function init() {
         if (document.pointerLockElement === videoElement) {
             mouse_wheel += Math.sign(e.deltaY);
             e.preventDefault();
+        }
+    });
+
+    document.addEventListener("pointerlockchange", () => {
+        if (document.pointerLockElement === null) {
+            setKey(27, true);  // Send ESC key
+            sendInputPacket(true);
         }
     });
 }
