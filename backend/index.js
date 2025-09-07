@@ -1,5 +1,6 @@
 const express = require('express')
 const path = require('path')
+const cors = require('cors');
 const session = require('./src/session.js');
 const app = express()
 const port = 3001
@@ -7,13 +8,14 @@ const port = 3001
 const redisEndpoint = 'redis://localhost:6379';
 
 app.use(express.static(path.join(__dirname, 'src')))
+app.use(cors())
 
 app.get('/create_session', async (req, res) => {
-  let userId = req.query.user_id;
-  let gameId = req.query.game_id;
+  let userId = req.query.user;
+  let gameId = req.query.game;
 
   if (!userId || !gameId) {
-    return res.status(400).json({ error: 'Missing user_id or game_id' });
+    return res.status(400).json({ error: 'Missing user or game' });
   }
 
   let sessionManager = new session.SessionManager(redisEndpoint);

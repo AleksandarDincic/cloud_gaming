@@ -92,41 +92,35 @@ function showError(message) {
 }
 
 
-function init() {
-    let params = window.location.pathname.split('/');
-    let user_name = params[1];
-    let game_name = params[2];
+async function createSession(backend_endpoint) {
+    let timeoutToken = new AbortController();
+    let timeoutId = setTimeout(() => timeoutToken.abort(), 60000);
 
-    let agent_ws_url = `ws://${window.location.hostname}`; // "ws://172.18.140.177";
+    let response;
+    try {
+        response = await fetch(backend_endpoint, {
+            method: "GET",
+            signal: timeoutToken.signal
+        });
+    } finally {
+        clearTimeout(timeoutId);
+    }
 
-    console.log(`Cloud gaming input: ${user_name}, ${game_name}`);
+    if (!response) {
+        throw new Error("No response from server");
+    }
 
-    let ws_url = `${agent_ws_url}:8765`;
-    showError(`Connecting...`);
-    console.log(`Connecting to ws: ${ws_url}`);
+    if (!response.ok) {
+        throw new Error(`Failed to create session: ${response.statusText}, ${await response.text()}`);
+    }
+    let session = await response.json();
+    return session;
+}
 
-    ws = new WebSocket(ws_url);
-
-    ws.addEventListener("open", (event) => {
-        ws.send(JSON.stringify({
-            type: "start",
-            user: user_name,
-            game: game_name
-        }))
-    });
-
-    ws.addEventListener("message", (event) => {
-        console.log(`Received from server: ${event.data}`);
-    });
-
+async function init_stream(webrtc_config) {
     videoElement = document.getElementById("stream_player")
 
     let session = null;
-
-    let webrtc_config = {
-        meta: { name: `WebClient-${Date.now()}` },
-        signalingServerUrl: `${agent_ws_url}:8443`,
-    };
 
     let webrtc_api = new GstWebRTCAPI(webrtc_config)
 
@@ -231,8 +225,62 @@ function init() {
     });
 }
 
+async function init() {
+    let params = window.location.pathname.split('/');
+    let user_name = params[1];
+    let game_name = params[2];
+
+    let session_info = null;
+    try {
+        session_info = await createSession(`http://${window.location.hostname}:3001/create_session?user=${user_name}&game=${game_name}`);
+    }
+    catch (e) {
+        showError(`Failed to create session: ${e.message}`);
+        return;
+    }
+
+    console.log("Session info:", session_info);
+    // session_info is already a JavaScript object, no need to parse
+
+    let ws_endpoint = session_info.ws_endpoint;
+    let signalling_endpoint = session_info.signalling_endpoint;
+
+    console.log(`Cloud gaming input: ${user_name}, ${game_name}`);
+
+    showError(`Connecting...`);
+    console.log(`Connecting to ws: ${ws_endpoint}`);
+
+    ws = new WebSocket(ws_endpoint);
+
+    ws.addEventListener("open", (event) => {
+        ws.send(JSON.stringify({
+            type: "start",
+            id: session_info.id,
+            user: user_name,
+            game: game_name
+        }))
+    });
+
+    let webrtc_config = {
+        meta: { name: `WebClient-${Date.now()}` },
+        signalingServerUrl: `${signalling_endpoint}`,
+    };
+
+    ws.addEventListener("message", (event) => {
+        console.log(`Received from server: ${event.data}`);
+        let msg = JSON.parse(event.data);
+        if (msg.result === "ok") {
+            console.log("Start acknowledged by server");
+            init_stream(webrtc_config);
+        }
+        else {
+            showError("Unexpected message from server:", msg);
+        }
+    });
+}
+
 window.addEventListener("DOMContentLoaded", () => {
-    document.addEventListener("click", () => {
-        init();
+    document.addEventListener("click", async () => {
+        await init();
     }, { once: true });
 });

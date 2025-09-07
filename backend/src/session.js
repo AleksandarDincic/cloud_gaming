@@ -11,9 +11,9 @@ export class SessionManager {
     async createSession(userId, gameId) {
         let sessionId = crypto.randomUUID();
         let sessionData = {
-            sessionId,
-            userId,
-            gameId
+            id: sessionId,
+            user: userId,
+            game: gameId
         };
         await this.redis.lpush(SessionManager.SESSIONS_KEY, JSON.stringify(sessionData));
 
