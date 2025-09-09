@@ -9,7 +9,7 @@ import traceback
 from pathlib import Path
 from game_module import GameModuleBase
 from subprocess import Popen
-from streaming import start_streaming
+from streaming import start_video_streaming, start_audio_streaming
 from remote_input import handle_packet
 from process import wait_for_window, bring_window_to_foreground
 
@@ -30,7 +30,8 @@ class AgentState:
     def __init__(self):
         self.lock = asyncio.Lock()
         self.game_proccess = None
-        self.streaming_process = None
+        self.video_streaming_process = None
+        self.audio_streaming_process = None
         self.connection_event = asyncio.Event()  # Event to signal connection
 
 class SessionData:
@@ -39,30 +40,27 @@ class SessionData:
         self.user = user
         self.game = game
 
+from dataclasses import dataclass
+
+@dataclass
 class Config:
-    def __init__(self, games_repo_path: str, working_folder_path: str, ws_ip: str, ws_port: int, audio_device: str, reported_ws_endpoint: str, reported_signalling_endpoint: str, redis_ip: str, redis_port: int):
-        self.games_repo_path = games_repo_path
-        self.working_folder_path = working_folder_path
-        self.ws_ip = ws_ip
-        self.ws_port = ws_port
-        self.audio_device = audio_device
-        self.reported_ws_endpoint = reported_ws_endpoint
-        self.reported_signalling_endpoint = reported_signalling_endpoint
-        self.redis_ip = redis_ip
-        self.redis_port = redis_port
+    games_repo_path: str
+    working_folder_path: str
+    ws_ip: str
+    ws_port: int
+    reported_ws_endpoint: str
+    reported_video_signalling_endpoint: str
+    reported_audio_signalling_endpoint: str
+    redis_ip: str
+    redis_port: int
+    minio_endpoint: str
+    minio_access_key: str
+    minio_secret_key: str
 
     @classmethod
     def from_ini(cls, ini_path: str):
         parser = configparser.ConfigParser()
         parser.read(ini_path)
-
-        # print entire parser object for debugging
-        print("Config file contents:")
-        for section in parser.sections():
-            print(f"[{section}]")
-            for key, value in parser.items(section):
-                print(f"{key} = {value}")
-            print()
         
         games_repo_path = parser['fs']['games_repo']
         working_folder_path = parser['fs']['working_folder']
@@ -70,19 +68,34 @@ class Config:
         ws_ip = parser['session']['ws_ip']
         ws_port = int(parser['session']['ws_port'])
         reported_ws_endpoint = parser['session']['reported_ws_endpoint']
-        reported_signalling_endpoint = parser['session']['reported_signalling_endpoint']
+        reported_video_signalling_endpoint = parser['session']['reported_video_signalling_endpoint']
+        reported_audio_signalling_endpoint = parser['session']['reported_audio_signalling_endpoint']
 
-        audio_device = parser['streaming']['audio_device']
-
-        # Add these missing Redis configs:
         redis_ip = parser['redis']['host']
         redis_port = int(parser['redis']['port'])
-       
-        return cls(games_repo_path, working_folder_path, ws_ip, ws_port, audio_device, 
-              reported_ws_endpoint, reported_signalling_endpoint, redis_ip, redis_port)
+
+        minio_endpoint = parser['minio']['endpoint']
+        minio_access_key = parser['minio']['access_key']
+        minio_secret_key = parser['minio']['secret_key']
+
+        return cls(
+            games_repo_path=games_repo_path,
+            working_folder_path=working_folder_path,
+            ws_ip=ws_ip,
+            ws_port=ws_port,
+            reported_ws_endpoint=reported_ws_endpoint,
+            reported_video_signalling_endpoint=reported_video_signalling_endpoint,
+            reported_audio_signalling_endpoint=reported_audio_signalling_endpoint,
+            redis_ip=redis_ip,
+            redis_port=redis_port,
+            minio_endpoint=minio_endpoint,
+            minio_access_key=minio_access_key,
+            minio_secret_key=minio_secret_key
+        )
 
 def start_game(config: Config, user: str, game: str) -> Popen:
-    dl = file_dl.LocalFSGameFileManager(config.working_folder_path, config.games_repo_path)
+    # dl = file_dl.LocalFSGameFileManager(config.working_folder_path, config.games_repo_path)
+    dl = file_dl.MinioGameFileManager(config.working_folder_path, config.minio_endpoint, config.minio_access_key, config.minio_secret_key, 'games')
     game_path = dl.install_from_repo(game)
     game_module = load_game_module(game_path)
     return game_module.start_game(game_path) # TODO: does this really need game_path as param? why not a field?
@@ -94,12 +107,15 @@ def create_ws_handle(config: Config, agent_state: AgentState, session_data: Sess
             if agent_state.game_proccess:
                 agent_state.game_proccess.terminate()
                 agent_state.game_proccess = None
-            if agent_state.streaming_process:
-                agent_state.streaming_process.terminate()
-                agent_state.streaming_process = None
+            if agent_state.video_streaming_process:
+                agent_state.video_streaming_process.terminate()
+                agent_state.video_streaming_process = None
+            if agent_state.audio_streaming_process:
+                agent_state.audio_streaming_process.terminate()
+                agent_state.audio_streaming_process = None
             cleanup_packet = bytes(56)
             handle_packet(cleanup_packet)
-            print("Game and streaming processes released. Input cleaned up.")
+            print("Game, video streaming, and audio streaming processes released. Input cleaned up.")
 
     async def ws_handle(ws):
         new_session = False
@@ -158,8 +174,9 @@ def create_ws_handle(config: Config, agent_state: AgentState, session_data: Sess
                     raise Exception("Window not found")
 
                 bring_window_to_foreground(hwnd)
-                print(f"Streaming window {hwnd} and audio device {config.audio_device}")
-                agent_state.streaming_process = start_streaming(hwnd, config.audio_device)
+                print(f"Streaming window {hwnd}")
+                agent_state.video_streaming_process = start_video_streaming(hwnd)
+                agent_state.audio_streaming_process = start_audio_streaming()
                 await ws.send(json.dumps({
                     "result": "ok",
                 }))
@@ -193,7 +210,8 @@ async def main(config: Config):
 
             redis_client.lpush(f"{session_data.id}", json.dumps({
                 "ws_endpoint": config.reported_ws_endpoint,
-                "signalling_endpoint": config.reported_signalling_endpoint,
+                "video_signalling_endpoint": config.reported_video_signalling_endpoint,
+                "audio_signalling_endpoint": config.reported_audio_signalling_endpoint,
                 "id": session_data.id
             }))
 

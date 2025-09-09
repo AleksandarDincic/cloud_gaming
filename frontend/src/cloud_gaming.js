@@ -1,4 +1,5 @@
 let videoElement = null;
+let audioElement = null;
 let ws = null;
 
 let keys_bit_mask = new Uint8Array(32);
@@ -117,61 +118,124 @@ async function createSession(backend_endpoint) {
     return session;
 }
 
-async function init_stream(webrtc_config) {
+async function init_stream(video_webrtc_config, audio_webrtc_config) {
     videoElement = document.getElementById("stream_player")
+    audioElement = document.getElementById("audio_player");
 
-    let session = null;
+    let videoSession = null;
+    let audioSession = null;
 
-    let webrtc_api = new GstWebRTCAPI(webrtc_config)
+    // Video WebRTC API
+    let video_webrtc_api = new GstWebRTCAPI(video_webrtc_config)
+    
+    // Audio WebRTC API
+    let audio_webrtc_api = new GstWebRTCAPI(audio_webrtc_config);
 
-    const listener = {
+    const videoListener = {
         producerAdded: function (producer) {
             const producerId = producer.id
 
-            console.log(`Adding producer ${producerId}`);
+            console.log(`Adding video producer ${producerId}`);
 
-            if (session) {
-                console.log("New producer was added but session is already running");
+            if (videoSession) {
+                console.log("New video producer was added but session is already running");
                 return;
             }
 
-            session = webrtc_api.createConsumerSession(producerId);
+            videoSession = video_webrtc_api.createConsumerSession(producerId);
 
-            session.mungeStereoHack = true;
-
-            session.addEventListener("error", (event) => {
-                console.error(event.message, event.error);
+            videoSession.addEventListener("error", (event) => {
+                console.error("Video session error:", event.message, event.error);
             });
 
-            session.addEventListener("closed", () => {
+            videoSession.addEventListener("closed", () => {
                 videoElement.pause();
                 videoElement.srcObject = null;
-                session = null;
-                showError("Session closed");
+                videoSession = null;
+                showError("Video session closed");
             });
 
-            session.addEventListener("streamsChanged", () => {
-                const streams = session.streams;
+            videoSession.addEventListener("streamsChanged", () => {
+                const streams = videoSession.streams;
                 if (streams.length > 0) {
                     videoElement.srcObject = streams[0];
                     showError("");
                     videoElement.play().catch(err => {
-                        showError("Autoplay error: " + err.message);
+                        showError("Video autoplay error: " + err.message);
                     });
                 }
             });
 
-            session.connect();
+            videoSession.connect();
         },
 
         producerRemoved: function (producer) {
-            showError("Producer removed, should clear everything");
+            console.log("Video producer removed");
+            if (videoSession) {
+                videoElement.pause();
+                videoElement.srcObject = null;
+                videoSession = null;
+            }
         }
     };
 
-    webrtc_api.registerPeerListener(listener);
-        for (const producer of webrtc_api.getAvailableProducers()) {
-        listener.producerAdded(producer);
+    const audioListener = {
+        producerAdded: function (producer) {
+            const producerId = producer.id
+
+            console.log(`Adding audio producer ${producerId}`);
+
+            if (audioSession) {
+                console.log("New audio producer was added but session is already running");
+                return;
+            }
+
+            audioSession = audio_webrtc_api.createConsumerSession(producerId);
+
+            audioSession.addEventListener("error", (event) => {
+                console.error("Audio session error:", event.message, event.error);
+            });
+
+            audioSession.addEventListener("closed", () => {
+                audioElement.pause();
+                audioElement.srcObject = null;
+                audioSession = null;
+                console.log("Audio session closed");
+            });
+
+            audioSession.addEventListener("streamsChanged", () => {
+                const streams = audioSession.streams;
+                if (streams.length > 0) {
+                    audioElement.srcObject = streams[0];
+                    audioElement.play().catch(err => {
+                        console.error("Audio autoplay error:", err.message);
+                    });
+                }
+            });
+
+            audioSession.connect();
+        },
+
+        producerRemoved: function (producer) {
+            console.log("Audio producer removed");
+            if (audioSession) {
+                audioElement.pause();
+                audioElement.srcObject = null;
+                audioSession = null;
+            }
+        }
+    };
+
+    // Register video listener
+    video_webrtc_api.registerPeerListener(videoListener);
+    for (const producer of video_webrtc_api.getAvailableProducers()) {
+        videoListener.producerAdded(producer);
+    }
+
+    // Register audio listener
+    audio_webrtc_api.registerPeerListener(audioListener);
+    for (const producer of audio_webrtc_api.getAvailableProducers()) {
+        audioListener.producerAdded(producer);
     }
 
     videoElement.requestPointerLock();
@@ -225,14 +289,18 @@ async function init_stream(webrtc_config) {
     });
 }
 
+const backend_endpoint = `http://localhost:3001`;
+
 async function init() {
     let params = window.location.pathname.split('/');
     let user_name = params[1];
     let game_name = params[2];
 
+    showError("Requesting session...");
+
     let session_info = null;
     try {
-        session_info = await createSession(`http://${window.location.hostname}:3001/create_session?user=${user_name}&game=${game_name}`);
+        session_info = await createSession(`${backend_endpoint}/create_session?user=${user_name}&game=${game_name}`);
     }
     catch (e) {
         showError(`Failed to create session: ${e.message}`);
@@ -243,11 +311,12 @@ async function init() {
     // session_info is already a JavaScript object, no need to parse
 
     let ws_endpoint = session_info.ws_endpoint;
-    let signalling_endpoint = session_info.signalling_endpoint;
+    let video_signalling_endpoint = session_info.video_signalling_endpoint;
+    let audio_signalling_endpoint = session_info.audio_signalling_endpoint;
 
     console.log(`Cloud gaming input: ${user_name}, ${game_name}`);
 
-    showError(`Connecting...`);
+    showError(`Connecting to server machine...`);
     console.log(`Connecting to ws: ${ws_endpoint}`);
 
     ws = new WebSocket(ws_endpoint);
@@ -261,9 +330,15 @@ async function init() {
         }))
     });
 
-    let webrtc_config = {
-        meta: { name: `WebClient-${Date.now()}` },
-        signalingServerUrl: `${signalling_endpoint}`,
+    let video_webrtc_config = {
+        meta: { name: `WebClient-Video-${Date.now()}` },
+        signalingServerUrl: `${video_signalling_endpoint}`,
+    };
+
+    // Audio config from separate endpoint
+    let audio_webrtc_config = {
+        meta: { name: `WebClient-Audio-${Date.now()}` },
+        signalingServerUrl: `${audio_signalling_endpoint}`,
     };
 
     ws.addEventListener("message", (event) => {
@@ -271,7 +346,7 @@ async function init() {
         let msg = JSON.parse(event.data);
         if (msg.result === "ok") {
             console.log("Start acknowledged by server");
-            init_stream(webrtc_config);
+            init_stream(video_webrtc_config, audio_webrtc_config);
         }
         else {
             showError("Unexpected message from server:", msg);
