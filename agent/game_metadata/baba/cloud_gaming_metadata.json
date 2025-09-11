@@ -1,0 +1,10 @@
+{
+    "exe_location": "Baba Is You.exe",
+    "save_root": "%APPDATA%/Baba_Is_You",
+    "save_patterns": [
+        {
+            "pattern_root": ".",
+            "pattern": "*"
+        }
+    ]
+}

@@ -1,7 +1,22 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 import zipfile
-from minio import Minio
+from minio import Minio, S3Error
+import tempfile
+
+class MinioClient:
+    def __init__(self, endpoint: str, access_key: str, secret_key: str):
+        self.client = Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=False)
+    
+    def download(self, bucket: str, object_name: str, local_path: str):
+        if not self.client.bucket_exists(bucket):
+            raise Exception(f"Bucket {bucket} does not exist")
+        self.client.fget_object(bucket, object_name, local_path)
+    
+    def upload(self, bucket: str, object_name: str, local_path: str):
+        if not self.client.bucket_exists(bucket):
+            raise Exception(f"Bucket {bucket} does not exist")
+        self.client.fput_object(bucket, object_name, local_path)
 
 class GameFileManager(ABC):
     def __init__(self, working_folder_path: str):
@@ -39,7 +54,7 @@ class LocalFSGameFileManager(GameFileManager):
 class MinioGameFileManager(GameFileManager):
     def __init__(self, working_folder_path: str, minio_endpoint: str, minio_access_key: str, minio_secret_key: str, minio_bucket: str):
         super().__init__(working_folder_path)
-        self.minio_client = Minio(minio_endpoint, access_key=minio_access_key, secret_key=minio_secret_key, secure=False)
+        self.minio_client = MinioClient(minio_endpoint, minio_access_key, minio_secret_key)
         self.minio_bucket = minio_bucket
 
     def install_from_repo(self, game: str) -> Path:
@@ -49,10 +64,7 @@ class MinioGameFileManager(GameFileManager):
             return dest_path
 
         zip_file_path = dest_path.with_suffix('.zip')
-        if self.minio_client.bucket_exists(self.minio_bucket):
-            self.minio_client.fget_object(self.minio_bucket, f'{game}.zip', str(zip_file_path))
-        else:
-            raise Exception(f"Bucket {self.minio_bucket} does not exist")
+        self.minio_client.download(self.minio_bucket, f'{game}.zip', str(zip_file_path))
 
         with zipfile.ZipFile(zip_file_path) as zip:
             zip.extractall(dest_path)
@@ -62,7 +74,35 @@ class MinioGameFileManager(GameFileManager):
         return dest_path
 
 class SaveFileManager(ABC):
-    pass
+    @abstractmethod
+    def download_save(self, game: str, user: str) -> Path: ...
 
-class LocalFSSaveFileManager(SaveFileManager):
-    pass
+    @abstractmethod
+    def upload_save(self, game: str, user: str, local_path: Path): ...
+
+
+class MinioSaveFileManager(SaveFileManager):
+    def __init__(self, minio_endpoint: str, minio_access_key: str, minio_secret_key: str, minio_bucket: str):
+        super().__init__()
+        self.minio_client = MinioClient(minio_endpoint, minio_access_key, minio_secret_key)
+        self.minio_bucket = minio_bucket
+
+    def download_save(self, game: str, user: str) -> Path | None:
+        temp_dir = Path(tempfile.gettempdir())
+        local_path = temp_dir / f'{game}_{user}_save.zip'
+
+        try:
+            self.minio_client.download(self.minio_bucket, f'saves/{game}/{user}.zip', str(local_path))
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                return None
+            raise e
+
+        extract_path = temp_dir / f'{game}_{user}_save'
+        with zipfile.ZipFile(local_path) as zip:
+            zip.extractall(extract_path)
+        local_path.unlink(missing_ok=True)
+        return extract_path
+
+    def upload_save(self, game: str, user: str, local_path: Path):
+        self.minio_client.upload(self.minio_bucket, f'saves/{game}/{user}.zip', str(local_path))

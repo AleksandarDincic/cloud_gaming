@@ -7,11 +7,13 @@ import importlib.util
 import redis
 import traceback
 from pathlib import Path
+from dataclasses import dataclass
 from game_module import GameModuleBase
 from subprocess import Popen
 from streaming import start_video_streaming, start_audio_streaming
 from remote_input import handle_packet
 from process import wait_for_window, bring_window_to_foreground
+from game_manager import GameMetadata, GameManager
 
 def load_game_module(game_dir: Path) -> GameModuleBase:
     plugin_file = game_dir / "game.py"
@@ -40,7 +42,6 @@ class SessionData:
         self.user = user
         self.game = game
 
-from dataclasses import dataclass
 
 @dataclass
 class Config:
@@ -93,20 +94,25 @@ class Config:
             minio_secret_key=minio_secret_key
         )
 
-def start_game(config: Config, user: str, game: str) -> Popen:
-    # dl = file_dl.LocalFSGameFileManager(config.working_folder_path, config.games_repo_path)
-    dl = file_dl.MinioGameFileManager(config.working_folder_path, config.minio_endpoint, config.minio_access_key, config.minio_secret_key, 'games')
-    game_path = dl.install_from_repo(game)
-    game_module = load_game_module(game_path)
-    return game_module.start_game(game_path) # TODO: does this really need game_path as param? why not a field?
-
 def create_ws_handle(config: Config, agent_state: AgentState, session_data: SessionData):
+
+    game_dl = file_dl.MinioGameFileManager(config.working_folder_path, config.minio_endpoint, config.minio_access_key, config.minio_secret_key, 'games')
+    save_dl = file_dl.MinioSaveFileManager(config.minio_endpoint, config.minio_access_key, config.minio_secret_key, 'saves')
+
+    game_metadata = None
+    game = None
+    user = None
 
     async def cleanup():
         async with agent_state.lock:
             if agent_state.game_proccess:
                 agent_state.game_proccess.terminate()
                 agent_state.game_proccess = None
+                if game_metadata and game and user:
+                    zipped_save = GameManager.export_save(game_metadata)
+                    save_dl.upload_save(game, user, zipped_save)
+                else:
+                    print("Game metadata, game, or user is None; skipping save upload.")
             if agent_state.video_streaming_process:
                 agent_state.video_streaming_process.terminate()
                 agent_state.video_streaming_process = None
@@ -118,6 +124,7 @@ def create_ws_handle(config: Config, agent_state: AgentState, session_data: Sess
             print("Game, video streaming, and audio streaming processes released. Input cleaned up.")
 
     async def ws_handle(ws):
+        nonlocal game_metadata, game, user
         new_session = False
         try:
             try:
@@ -139,7 +146,7 @@ def create_ws_handle(config: Config, agent_state: AgentState, session_data: Sess
                     "msg": "First message must be start."
                 }))
                 return
-            
+
             user = json_msg.get('user')
             game = json_msg.get('game')
 
@@ -159,10 +166,23 @@ def create_ws_handle(config: Config, agent_state: AgentState, session_data: Sess
                         "msg": "A session is already running."
                     }))
                     return
-                
+
                 new_session = True
                 agent_state.connection_event.set()
-                agent_state.game_proccess = start_game(config, user, game)
+
+                game_path = game_dl.install_from_repo(game)
+                print (f"Game {game} installed to {game_path}")
+                game_metadata = GameMetadata.from_json(game_path / "cloud_gaming_metadata.json")
+                print(f"Game metadata: {game_metadata}")
+                save_path = save_dl.download_save(game, user)
+
+                if save_path:
+                    print(f"Existing save downloaded to {save_path}. Importing...")
+                    GameManager.import_save(save_path, game_metadata)
+                else:
+                    print("No existing save found.")
+
+                agent_state.game_proccess = GameManager.start_game(game_path, game_metadata)
 
                 hwnd = wait_for_window(agent_state.game_proccess.pid)
 

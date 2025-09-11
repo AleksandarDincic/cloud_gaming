@@ -1,0 +1,14 @@
+{
+    "exe_location": "SH.exe",
+    "save_root": "%APPDATA%/../LocalLow/SUPERHOT_Team/SUPERHOT",
+    "save_patterns": [
+        {
+            "pattern_root": ".",
+            "pattern": "*.cfg"
+        },
+        {
+            "pattern_root": ".",
+            "pattern": "*.hot"
+        }
+    ]
+}
