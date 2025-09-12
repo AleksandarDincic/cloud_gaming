@@ -14,6 +14,7 @@ from streaming import start_video_streaming, start_audio_streaming
 from remote_input import handle_packet
 from process import wait_for_window, bring_window_to_foreground
 from game_manager import GameMetadata, GameManager
+import psutil
 
 def load_game_module(game_dir: Path) -> GameModuleBase:
     plugin_file = game_dir / "game.py"
@@ -41,6 +42,24 @@ class SessionData:
         self.id = id
         self.user = user
         self.game = game
+
+
+async def monitor_game_process(agent_state: AgentState):
+    while True:
+        async with agent_state.lock:
+            if agent_state.game_proccess is None:
+                break
+            
+            try:
+                process = psutil.Process(agent_state.game_proccess.pid)
+                if not process.is_running() or process.status() == psutil.STATUS_ZOMBIE:
+                    print(f"Game process {agent_state.game_proccess.pid} has terminated. Closing session.")
+                    break
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                print(f"Game process {agent_state.game_proccess.pid} no longer exists. Closing session.")
+                break
+
+        await asyncio.sleep(1.0)
 
 
 @dataclass
@@ -102,11 +121,17 @@ def create_ws_handle(config: Config, agent_state: AgentState, session_data: Sess
     game_metadata = None
     game = None
     user = None
+    monitor_task = None
+    message_task = None
 
     async def cleanup():
         async with agent_state.lock:
             if agent_state.game_proccess:
-                agent_state.game_proccess.terminate()
+                try:
+                    agent_state.game_proccess.terminate()
+                except Exception as e:
+                    pass
+                
                 agent_state.game_proccess = None
                 if game_metadata and game and user:
                     zipped_save = GameManager.export_save(game_metadata)
@@ -124,7 +149,7 @@ def create_ws_handle(config: Config, agent_state: AgentState, session_data: Sess
             print("Game, video streaming, and audio streaming processes released. Input cleaned up.")
 
     async def ws_handle(ws):
-        nonlocal game_metadata, game, user
+        nonlocal game_metadata, game, user, monitor_task, message_task
         new_session = False
         try:
             try:
@@ -202,11 +227,23 @@ def create_ws_handle(config: Config, agent_state: AgentState, session_data: Sess
                     "result": "ok",
                 }))
 
-            async for msg in ws:
-                if isinstance(msg, bytes):
-                    handle_packet(msg)
-                else:
-                    print(f"New msg: {msg}")
+            async def handle_messages():
+                try:
+                    async for msg in ws:
+                        if isinstance(msg, bytes):
+                            handle_packet(msg)
+                        else:
+                            print(f"New msg: {msg}")
+                except Exception as e:
+                    print(f"Error in message handling: {e}")
+
+            monitor_task = asyncio.create_task(monitor_game_process(agent_state))    
+            message_task = asyncio.create_task(handle_messages())
+            
+            await asyncio.wait(
+                [message_task, monitor_task], 
+                return_when=asyncio.FIRST_COMPLETED
+            )
         except Exception as e:
             traceback.print_exc()
             print(f"Error: {e}. Closing session")
@@ -214,6 +251,13 @@ def create_ws_handle(config: Config, agent_state: AgentState, session_data: Sess
             if new_session:
                 await cleanup()
                 ws.server.close()
+                for task in [message_task, monitor_task]:
+                    if task is not None and not task.done():
+                        task.cancel()
+                        try:
+                            await task
+                        except Exception:
+                            pass
 
     return ws_handle
 
@@ -258,6 +302,6 @@ async def main(config: Config):
 
 
 if __name__ == "__main__":
-    config = Config.from_ini('C:/faks/master/cloud_gaming/agent/config.ini')
+    config = Config.from_ini('agent/config.ini')
     
     asyncio.run(main(config))

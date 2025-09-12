@@ -33,16 +33,17 @@ function stateChanged() {
 }
 
 function sendInputPacket(force) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.log("Websocket not open, not sending")
+        return;
+    }
+
     if (!force) {
         if (document.pointerLockElement !== videoElement)  {
             console.log("Pointer lock not on video, not sending")
             return;
         }
 
-        if (ws.readyState !== WebSocket.OPEN) {
-            console.log("Websocket not open, not sending")
-            return;
-        }
 
         if (SEND_ON_STATE_CHANGE && !stateChanged()) {
             console.log("State hasnt changed, not sending")
@@ -90,6 +91,25 @@ function showError(message) {
         document.getElementById("error").style.display = "block";
         document.getElementById("stream_player").style.display = "none";
     }
+}
+
+function terminateSession() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+        ws = null;
+    }
+    
+    if (videoElement) {
+        videoElement.pause();
+        videoElement.srcObject = null;
+    }
+    
+    if (audioElement) {
+        audioElement.pause();
+        audioElement.srcObject = null;
+    }
+
+    showError("Session closed");
 }
 
 
@@ -152,7 +172,8 @@ async function init_stream(video_webrtc_config, audio_webrtc_config) {
                 videoElement.pause();
                 videoElement.srcObject = null;
                 videoSession = null;
-                showError("Video session closed");
+                console.log("Video session closed");
+                terminateSession();
             });
 
             videoSession.addEventListener("streamsChanged", () => {
@@ -176,6 +197,7 @@ async function init_stream(video_webrtc_config, audio_webrtc_config) {
                 videoElement.srcObject = null;
                 videoSession = null;
             }
+            terminateSession();
         }
     };
 
@@ -351,6 +373,16 @@ async function init() {
         else {
             showError("Unexpected message from server:", msg);
         }
+    });
+
+    ws.addEventListener("close", (event) => {
+        console.log("WebSocket connection closed", event);
+        terminateSession();
+    });
+
+    ws.addEventListener("error", (event) => {
+        console.error("WebSocket error:", event);
+        terminateSession();
     });
 }
 
