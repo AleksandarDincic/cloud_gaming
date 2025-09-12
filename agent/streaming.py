@@ -67,7 +67,6 @@ def start_video_streaming(window_handle: int) -> Popen:
     #     "run-signalling-server=true", "run-web-server=true", "web-server-host-addr=http://0.0.0.0:8080/"
     # ]
 
-    # Ultra-low latency pipeline (minimum latency, quality ignored)
     cmd = [
         "gst-launch-1.0.exe",
         "d3d11screencapturesrc", "show-cursor=true", f"window-handle={window_handle}",

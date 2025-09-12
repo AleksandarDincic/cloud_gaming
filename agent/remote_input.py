@@ -102,7 +102,6 @@ def handle_packet(pkt: bytes):
 
     # Handle mouse wheel
     if mouse_wheel_input != 0:
-        # Windows expects wheel delta in multiples of 120
         wheel_delta =  -1 * mouse_wheel_input * 120
         mouse_wheel(wheel_delta)
 
@@ -110,9 +109,8 @@ def handle_packet(pkt: bytes):
     timestamp_ms, = struct.unpack('<Q', pkt[48:56])
     current_time_ms = int(time.time() * 1000)
     latency_ms = current_time_ms - timestamp_ms
-    if latency_ms > 100:  # Only log if latency is significant
+    if latency_ms > 100:
         print(f"Input latency: {latency_ms}ms")
-        # also print received timestamp
         print(f"Received timestamp: {timestamp_ms}ms")
 
 def key_event(vk, down=True):
@@ -121,7 +119,6 @@ def key_event(vk, down=True):
     if not down:
         flags |= KEYEVENTF_KEYUP
 
-    # Add extended flag for certain keys
     if vk in (0x1D, 0x38, 0x9D, 0xB8,  # Ctrl, Alt (L/R)
               0x25, 0x26, 0x27, 0x28,  # Arrow keys
               0x2D, 0x2E, 0x23, 0x24,  # Ins, Del, End, Home

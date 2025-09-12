@@ -35,7 +35,7 @@ class AgentState:
         self.game_proccess = None
         self.video_streaming_process = None
         self.audio_streaming_process = None
-        self.connection_event = asyncio.Event()  # Event to signal connection
+        self.connection_event = asyncio.Event()
 
 class SessionData:
     def __init__(self, id: str, user: str, game: str):
