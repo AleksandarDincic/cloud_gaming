@@ -12,7 +12,6 @@ let previous_mouse_buttons = 0;
 
 let input_packet = new Uint8Array(56); // 32 bytes for keys + 16 bytes for mouse data + 8 bytes for timestamp
 
-const SEND_ON_STATE_CHANGE = true;
 
 function setKey(vk, down) {
   const b = vk >>> 3, bit = vk & 7;
@@ -44,8 +43,7 @@ function sendInputPacket(force) {
             return;
         }
 
-
-        if (SEND_ON_STATE_CHANGE && !stateChanged()) {
+        if (!stateChanged()) {
             console.log("State hasnt changed, not sending")
             return;
         }
