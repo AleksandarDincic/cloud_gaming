@@ -45,18 +45,25 @@ class SessionData:
 
 
 async def monitor_game_process(agent_state: AgentState):
+    def is_process_alive(proc):
+        if proc is None:
+            return False
+        try:
+            process = psutil.Process(proc.pid)
+            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+
     while True:
         async with agent_state.lock:
-            if agent_state.game_proccess is None:
+            if not is_process_alive(agent_state.game_proccess):
+                print(f"Game process not running. Closing session.")
                 break
-            
-            try:
-                process = psutil.Process(agent_state.game_proccess.pid)
-                if not process.is_running() or process.status() == psutil.STATUS_ZOMBIE:
-                    print(f"Game process {agent_state.game_proccess.pid} has terminated. Closing session.")
-                    break
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                print(f"Game process {agent_state.game_proccess.pid} no longer exists. Closing session.")
+            if not is_process_alive(agent_state.video_streaming_process):
+                print(f"Video streaming process not running. Closing session.")
+                break
+            if not is_process_alive(agent_state.audio_streaming_process):
+                print(f"Audio streaming process not running. Closing session.")
                 break
 
         await asyncio.sleep(1.0)
