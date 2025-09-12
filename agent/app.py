@@ -178,9 +178,10 @@ def create_ws_handle(config: Config, agent_state: AgentState, session_data: Sess
 
                 if save_path:
                     print(f"Existing save downloaded to {save_path}. Importing...")
-                    GameManager.import_save(save_path, game_metadata)
                 else:
                     print("No existing save found.")
+                    
+                GameManager.import_save(save_path, game_metadata)
 
                 agent_state.game_proccess = GameManager.start_game(game_path, game_metadata)
 

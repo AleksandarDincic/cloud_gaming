@@ -19,8 +19,8 @@ class GameMetadata:
             data = json.load(f)
         return cls(
             exe_location=data['exe_location'],
-            root=data['save_root'],
-            patterns=data['save_patterns']
+            save_root=data['save_root'],
+            save_patterns=data['save_patterns']
         )
 
 class GameManager:
@@ -41,6 +41,9 @@ class GameManager:
             for f in pat_root.glob(pat['pattern']):
                 if f.is_file():
                     f.unlink()
+
+        if not source_location:
+            return
         
         for pat in metadata.patterns:
             src_pat_root = source_location / pat['pattern_root']
