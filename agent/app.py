@@ -16,19 +16,6 @@ from process import wait_for_window, bring_window_to_foreground
 from game_manager import GameMetadata, GameManager
 import psutil
 
-def load_game_module(game_dir: Path) -> GameModuleBase:
-    plugin_file = game_dir / "game.py"
-
-    modname = f"{game_dir.name}_game_module"
-    spec = importlib.util.spec_from_file_location(modname, plugin_file)
-    module  = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    cls = getattr(module, "GameModule", None)
-    if cls is None or not issubclass(cls, GameModuleBase):
-        raise TypeError(f"{plugin_file} must define class GameModule(GameModuleBase)")
-    return cls()
-
 class AgentState:
     def __init__(self):
         self.lock = asyncio.Lock()
