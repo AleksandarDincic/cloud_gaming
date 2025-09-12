@@ -145,10 +145,8 @@ async function init_stream(video_webrtc_config, audio_webrtc_config) {
     let videoSession = null;
     let audioSession = null;
 
-    // Video WebRTC API
     let video_webrtc_api = new GstWebRTCAPI(video_webrtc_config)
     
-    // Audio WebRTC API
     let audio_webrtc_api = new GstWebRTCAPI(audio_webrtc_config);
 
     const videoListener = {
@@ -248,13 +246,11 @@ async function init_stream(video_webrtc_config, audio_webrtc_config) {
         }
     };
 
-    // Register video listener
     video_webrtc_api.registerPeerListener(videoListener);
     for (const producer of video_webrtc_api.getAvailableProducers()) {
         videoListener.producerAdded(producer);
     }
 
-    // Register audio listener
     audio_webrtc_api.registerPeerListener(audioListener);
     for (const producer of audio_webrtc_api.getAvailableProducers()) {
         audioListener.producerAdded(producer);
@@ -330,7 +326,6 @@ async function init() {
     }
 
     console.log("Session info:", session_info);
-    // session_info is already a JavaScript object, no need to parse
 
     let ws_endpoint = session_info.ws_endpoint;
     let video_signalling_endpoint = session_info.video_signalling_endpoint;
@@ -357,7 +352,6 @@ async function init() {
         signalingServerUrl: `${video_signalling_endpoint}`,
     };
 
-    // Audio config from separate endpoint
     let audio_webrtc_config = {
         meta: { name: `WebClient-Audio-${Date.now()}` },
         signalingServerUrl: `${audio_signalling_endpoint}`,

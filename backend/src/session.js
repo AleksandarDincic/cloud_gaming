@@ -19,7 +19,6 @@ export class SessionManager {
 
         console.log(`Attempting to create session: ${JSON.stringify(sessionData)}`);
 
-        // either wait for an ack or timeout
         let ack = await this.redis.blpop(sessionId, 60);
 
         if (!ack) {
