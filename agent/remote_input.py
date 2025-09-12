@@ -68,7 +68,6 @@ def handle_packet(pkt: bytes):
         byte_i = vk >> 3
         bit = 1 << (vk & 7)
         is_down = new_keys[byte_i] & bit
-        print(f"Key {vk} {'down' if is_down else 'up'}")
         key_event(vk, down=bool(is_down))
         diff &= diff - 1
     prev_keys[:] = new_keys
@@ -109,9 +108,8 @@ def handle_packet(pkt: bytes):
     timestamp_ms, = struct.unpack('<Q', pkt[48:56])
     current_time_ms = int(time.time() * 1000)
     latency_ms = current_time_ms - timestamp_ms
-    if latency_ms > 100:
-        print(f"Input latency: {latency_ms}ms")
-        print(f"Received timestamp: {timestamp_ms}ms")
+    # print(f"Input latency: {latency_ms}ms")
+    # print(f"Received timestamp: {timestamp_ms}ms")
 
 def key_event(vk, down=True):
     scan = ctypes.windll.user32.MapVirtualKeyW(vk, 0)
