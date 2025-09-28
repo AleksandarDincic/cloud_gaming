@@ -8,7 +8,6 @@ import redis
 import traceback
 from pathlib import Path
 from dataclasses import dataclass
-from game_module import GameModuleBase
 from subprocess import Popen
 from streaming import start_video_streaming, start_audio_streaming
 from remote_input import handle_packet
@@ -296,6 +295,6 @@ async def main(config: Config):
 
 
 if __name__ == "__main__":
-    config = Config.from_ini('agent/config.ini')
+    config = Config.from_ini('config.ini')
     
     asyncio.run(main(config))
