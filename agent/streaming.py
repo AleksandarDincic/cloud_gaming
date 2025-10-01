@@ -5,8 +5,6 @@ def start_audio_streaming() -> Popen:
         "gst-launch-1.0.exe",
         "wasapisrc", "loopback=true", "low-latency=true",
         "!", "audioconvert",
-        "!", "audioresample",
-        "!", "audio/x-raw,rate=48000,channels=2,format=S16LE",
         "!", "opusenc", "bitrate=96000",
         "!", "queue", "max-size-buffers=1", "max-size-time=0", "max-size-bytes=0", "leaky=downstream",
         "!", "webrtcsink",
