@@ -6,6 +6,7 @@ const app = express()
 const port = 3001
 
 const redisEndpoint = 'redis://localhost:6379';
+const sessionManager = new session.SessionManager(redisEndpoint);
 
 app.use(express.static(path.join(__dirname, 'src')))
 app.use(cors())
@@ -18,7 +19,6 @@ app.get('/create_session', async (req, res) => {
     return res.status(400).json({ error: 'Missing user or game' });
   }
 
-  let sessionManager = new session.SessionManager(redisEndpoint);
   try {
     let sessionInfo = await sessionManager.createSession(userId, gameId);
     res.json(sessionInfo);

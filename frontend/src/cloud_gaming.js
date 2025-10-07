@@ -12,13 +12,15 @@ let previous_mouse_buttons = 0;
 
 let input_packet = new Uint8Array(56); // 32 bytes for keys + 16 bytes for mouse data + 8 bytes for timestamp
 
+function setMouseButton(button, down) {
+    if (down) mouse_buttons |= (1 << button);
+    else mouse_buttons &= ~(1 << button);
+}
 
 function setKey(vk, down) {
   const b = vk >>> 3, bit = vk & 7;
-  if (b < 32) {
-    if (down) keys_bit_mask[b] |=  (1<<bit);
-    else      keys_bit_mask[b] &= ~(1<<bit);
-  }
+  if (down) keys_bit_mask[b] |=  (1<<bit);
+  else      keys_bit_mask[b] &= ~(1<<bit);
 };
 
 function stateChanged() {
@@ -33,18 +35,18 @@ function stateChanged() {
 
 function sendInputPacket(force) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.log("Websocket not open, not sending")
+        // Websocket not open, not sending
         return;
     }
 
     if (!force) {
         if (document.pointerLockElement !== videoElement)  {
-            console.log("Pointer lock not on video, not sending")
+            // Pointer lock not on video, not sending
             return;
         }
 
         if (!stateChanged()) {
-            console.log("State hasnt changed, not sending")
+            // State hasnt changed, not sending
             return;
         }
     }
@@ -269,30 +271,28 @@ async function init_stream(video_webrtc_config, audio_webrtc_config) {
 
     addEventListener("mousemove", e => {
         if (document.pointerLockElement === videoElement) {
-            console.log(`JS: Mouse move - movementX=${e.movementX}, movementY=${e.movementY}`);
             mouse_dx += e.movementX;
             mouse_dy += e.movementY;
-            console.log(`JS: Accumulated - dx=${mouse_dx}, dy=${mouse_dy}`);
         }
     }, {passive:true});
 
     addEventListener("mousedown", e => {
         if (document.pointerLockElement === videoElement) {
-            mouse_buttons |= (1 << e.button);
+            setMouseButton(e.button, true);
             e.preventDefault();
         }
     });
 
     addEventListener("mouseup", e => {
         if (document.pointerLockElement === videoElement) {
-            mouse_buttons &= ~(1 << e.button);
+            setMouseButton(e.button, false);
             e.preventDefault();
         }
     });
 
     addEventListener("wheel", e => {
         if (document.pointerLockElement === videoElement) {
-            mouse_wheel += Math.sign(e.deltaY);
+            mouse_wheel += Math.round(e.deltaY);
             e.preventDefault();
         }
     });

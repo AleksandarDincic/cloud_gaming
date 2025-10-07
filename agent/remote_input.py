@@ -101,7 +101,8 @@ def handle_packet(pkt: bytes):
 
     # Handle mouse wheel
     if mouse_wheel_input != 0:
-        wheel_delta =  -1 * mouse_wheel_input * 120
+        # Positive deltaY (scroll down) should be negative wheel delta (scroll down), hence the -1
+        wheel_delta = -1 * mouse_wheel_input
         mouse_wheel(wheel_delta)
 
     # Timestamp (48-55)
@@ -133,10 +134,8 @@ def mouse_event(flags, data=0):
     inp = INPUT(type=INPUT_MOUSE, union=_INPUTunion(mi=mi))
     SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
 
-def mouse_move(dx, dy, absolute=False):
+def mouse_move(dx, dy):
     flags = MOUSEEVENTF_MOVE
-    if absolute:
-        flags |= MOUSEEVENTF_ABSOLUTE
     mi = MOUSEINPUT(dx, dy, 0, flags, 0, 0)
     inp = INPUT(type=INPUT_MOUSE, union=_INPUTunion(mi=mi))
     SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))

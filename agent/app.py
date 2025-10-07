@@ -272,6 +272,7 @@ async def main(config: Config):
                 "audio_signalling_endpoint": config.reported_audio_signalling_endpoint,
                 "id": session_data.id
             }))
+            redis_client.expire(f"{session_data.id}", 60)
 
             agent_state.connection_event.clear()
             
@@ -295,6 +296,6 @@ async def main(config: Config):
 
 
 if __name__ == "__main__":
-    config = Config.from_ini('config.ini')
+    config = Config.from_ini('agent/config.ini')
     
     asyncio.run(main(config))

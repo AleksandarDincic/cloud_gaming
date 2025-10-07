@@ -9,9 +9,9 @@ from subprocess import Popen
 
 class GameMetadata:
     def __init__(self, exe_location: str, save_root: str, save_patterns: list):
-        self.root = os.path.expandvars(save_root)
+        self.save_root = os.path.expandvars(save_root)
         self.exe_location = exe_location
-        self.patterns = save_patterns
+        self.save_patterns = save_patterns
 
     @classmethod
     def from_json(cls, json_path: Path):
@@ -32,9 +32,9 @@ class GameManager:
 
     @staticmethod
     def import_save(source_location: Path, metadata: GameMetadata):
-        root = Path(metadata.root)
+        root = Path(metadata.save_root)
         
-        for pat in metadata.patterns:
+        for pat in metadata.save_patterns:
             pat_root = root / pat['pattern_root']
             if not pat_root.exists():
                 pat_root.mkdir(parents=True, exist_ok=True)
@@ -45,7 +45,7 @@ class GameManager:
         if not source_location:
             return
         
-        for pat in metadata.patterns:
+        for pat in metadata.save_patterns:
             src_pat_root = source_location / pat['pattern_root']
             for f in src_pat_root.glob(pat['pattern']):
                 if f.is_file():
@@ -55,11 +55,11 @@ class GameManager:
 
     @staticmethod
     def export_save(metadata: GameMetadata) -> Path:
-        root = Path(metadata.root)
+        root = Path(metadata.save_root)
         temp_folder = Path(tempfile.mkdtemp())
         zip_path = temp_folder / 'save_export.zip'
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for pat in metadata.patterns:
+            for pat in metadata.save_patterns:
                 pat_root = root / pat['pattern_root']
                 for f in pat_root.glob(pat['pattern']):
                     if f.is_file():
